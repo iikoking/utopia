@@ -290,29 +290,21 @@ int socket_base_linux::async_send(char * buff, unsigned int lenbuff){
 			do_send();
 		}
 	}else{
-		int sendlen = 0, llen = 0;
-		while(1){
-			if ((sendlen = send(_socket, buff+llen, lenbuff, 0)) == -1){
-				int error = errno;
-				if (error != EAGAIN){
-					err = error;
-					break;
-				}
-
-				if (llen < lenbuff){
-					boost::this_thread::sleep(boost::posix_time::milliseconds(15));
-					continue;
-				}
-
-				break;
-			}
+		int sendlen = 0, llen = 0, buff_left = lenbuff;
+		while (buff_left > 0) {
+            // TODO waitforsend
+            if ((sendlen = send(_socket, buff+llen, buff_left, MSG_NOSIGNAL)) == -1) { // iOS SO_NOSIGPIPE
+                int error = errno;
+                if (error != EAGAIN && error != EINTR) {
+                    err = error;
+                    break;
+                }
+                boost::this_thread::sleep(boost::posix_time::milliseconds(15));
+                continue;
+            }
 
 			llen += sendlen;
-			if (llen < lenbuff){
-				continue;
-			}else{
-				break;
-			}
+            buff_left -= sendlen;
 		}
 
 		if (err == 0){
@@ -342,28 +334,20 @@ int socket_base_linux::do_send(){
 		char * buff = _write_buff->send_buff_.load()->buff;
 		int llenbuf = _write_buff->send_buff_.load()->slide.load();
 		if (llenbuf > 0){
-			while(1){
-				if ((sendlen = send(_socket, buff +llen, llenbuf, 0)) == -1){
-					int error = errno;
-					if (error != EAGAIN){
-						err = error;
-						break;
-					}
-
-					if (llen < _write_buff->send_buff_.load()->_wsabuf_slide.load()){
-						boost::this_thread::sleep(boost::posix_time::milliseconds(15));
-						continue;
-					}
-
-					break;
-				}
+            while (llenbuf > 0) {
+                // TODO waitforsend
+                if ((sendlen = send(_socket, buff +llen, llenbuf, MSG_NOSIGNAL)) == -1){ // iOS SO_NOSIGPIPE 
+                    int error = errno;
+                    if (error != EAGAIN && error != EINTR){
+                        err = error;
+                        break;
+                    }
+                    boost::this_thread::sleep(boost::posix_time::milliseconds(15));
+                    continue;
+                }
 
 				llen += sendlen;
-				if (llen < lenbuff){
-					continue;
-				}else{
-					break;
-				}
+                llenbuf -= sendlen;
 			}
 
 			if (err == 0){
